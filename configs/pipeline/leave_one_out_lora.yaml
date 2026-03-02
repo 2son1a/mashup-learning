@@ -1,0 +1,231 @@
+# @package _global_
+
+# uv run python scripts/pipeline.py configs/pipeline/leave_one_out_lora.yaml
+
+experiment_name: gemma3_1b
+description: "LoRA training and averaging pipeline for Gemma 3 1B"
+base_model: google/gemma-3-1b-it
+
+variables:
+  all_tasks: ["arc_easy", "hellaswag", "math_qa", "winogrande", "social_iqa", "piqa", "commonsense_qa", "openbookqa"]
+  learning_rates: [5e-5, 1.6e-4, 2.7e-4, 3.8e-4, 5.0e-4]
+
+stages:
+  eval_base:
+    type: eval
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - /eval: default
+        - /tasks: "{task}"
+        - _self_
+
+      eval:
+        checkpoints: false
+      output_dir: eval_base_{task}
+
+  train_eval_tasks:
+    num_gpus: 1
+    matrix:
+      task: all_tasks
+      lr: learning_rates
+    subjobs:
+      - type: wait_for_disk
+        config:
+          min_disk_gb: 700
+          output_dir: "wait_lora_{task}_lr{lr}"
+      - type: train
+        config:
+          defaults:
+            - /train: lora_default
+            - /train: wandb_default
+            - /tasks: "{task}"
+            - _self_
+          learning_rate: "{lr}"
+          output_dir: "lora_{task}_lr{lr}"
+      - type: eval
+        config:
+          defaults:
+            - /eval: default
+            - /tasks: "{task}"
+            - _self_
+          model_path: "lora_{task}_lr{lr}"
+          output_dir: "eval_lora_{task}_lr{lr}"
+    cleanup_checkpoints: "lora_{task}_lr{lr}"
+
+  select_best_task_lr:
+    type: select_best
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      metric: accuracy
+      eval_results_glob: "eval_lora_{task}_lr*"
+      link_name: "lora_{task}"
+      eval_link_name: "eval_trained_lora_{task}"
+      output_dir: "select_best_lora_{task}"
+
+  cleanup_first_lr_sweep:
+    type: cleanup
+    num_gpus: 0
+    config:
+      patterns:
+        - "lora_*_lr*"
+      output_dir: cleanup_first_lr_sweep
+
+  eval_loras_relevance:
+    type: eval
+    matrix:
+      task1: all_tasks
+      task2: all_tasks
+    config:
+      defaults:
+        - /eval: relevance
+        - /tasks: "{task2}"
+        - _self_
+
+      model_path: "lora_{task1}"
+      output_dir: eval_{task1}_on_{task2}
+
+  select_topk:
+    type: topk
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      k: 2
+      metric: accuracy
+      weight_strategy: equal
+      eval_results_glob: eval_*_on_{task}
+      exclude_glob: eval_{task}_on_{task}
+      output_dir: merge_config_{task}
+
+  lora_merge_models:
+    type: lora_merge
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - "@output": merge_config_{task}/topk_config
+        - _self_
+      output_dir: merged_lora_{task}
+
+  eval_merged_lora:
+    type: eval
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - /eval: default
+        - /tasks: "{task}"
+        - _self_
+
+      model_path: merged_lora_{task}
+      output_dir: eval_merged_lora_{task}
+
+  train_eval_on_merged_lora:
+    num_gpus: 1
+    matrix:
+      task: all_tasks
+      lr: learning_rates
+    subjobs:
+      - type: wait_for_disk
+        config:
+          min_disk_gb: 700
+          output_dir: "wait_merged_{task}_lr{lr}"
+      - type: train
+        config:
+          defaults:
+            - /train: lora_default
+            - /train: wandb_default
+            - /tasks: "{task}"
+            - _self_
+          lora_model_dir: merged_lora_{task}
+          learning_rate: "{lr}"
+          output_dir: "trained_merged_{task}_lr{lr}"
+      - type: eval
+        config:
+          defaults:
+            - /eval: default
+            - /tasks: "{task}"
+            - _self_
+          model_path: "trained_merged_{task}_lr{lr}"
+          output_dir: "eval_merged_{task}_lr{lr}"
+    cleanup_checkpoints: "trained_merged_{task}_lr{lr}"
+
+  cleanup_merged_loras:
+    type: cleanup
+    num_gpus: 0
+    config:
+      patterns:
+        - "merged_lora_*"
+      output_dir: cleanup_merged_loras
+
+  select_best_trained_merged_lr:
+    type: select_best
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      metric: accuracy
+      eval_results_glob: "eval_merged_{task}_lr*"
+      link_name: "trained_merged_{task}"
+      eval_link_name: "eval_trained_merged_{task}"
+      output_dir: "select_best_trained_merged_{task}"
+
+  cleanup_all_adapters:
+    type: cleanup
+    num_gpus: 0
+    config:
+      remove_symlinks:
+        - "lora_*"
+        - "trained_merged_*"
+      patterns:
+        - "wait_*"
+        - "lora_*_lr*"
+        - "trained_merged_*"
+      output_dir: cleanup_all_adapters
+
+  summary:
+    type: summary
+    num_gpus: 0
+    config:
+      output_dir: summary
+      results:
+        - name: base
+          pattern: "eval_base_*"
+          include_checkpoints: false
+        - name: lr_sweep_lora
+          pattern: "eval_lora_*_lr*"
+        - name: trained_lora
+          pattern: "eval_trained_lora_*"
+        - name: merged_lora
+          pattern: "eval_merged_lora_*"
+          include_checkpoints: false
+        - name: lr_sweep_merged
+          pattern: "eval_merged_*_lr*"
+        - name: trained_merged
+          pattern: "eval_trained_merged_*"
+
+  analysis:
+    type: analysis
+    num_gpus: 0
+    config:
+      output_dir: analysis
+      group: lora
+      methods:
+        base: {name: base, display: "Base model"}
+        from_scratch: {name: trained_lora, checkpoint: final, display: "LoRA (from scratch)"}
+        merged: {name: merged_lora, display: "Merged (zero-shot)"}
+        mashup: {name: trained_merged, checkpoint: final, display: "Mashup Learning"}
+      sweeps:
+        from_scratch: lr_sweep_lora
+        mashup: lr_sweep_merged
+      timing_stages:
+        train: train_eval_tasks
+        relevance: eval_loras_relevance
+        merge: lora_merge_models
+        train_merged: train_eval_on_merged_lora
+      task_labels: null

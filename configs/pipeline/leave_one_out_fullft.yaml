@@ -1,0 +1,233 @@
+# @package _global_
+
+# uv run python scripts/pipeline.py configs/pipeline/leave_one_out_fullft.yaml
+
+experiment_name: gemma3_1b_fullft
+description: "Full fine-tuning and merging pipeline for Gemma 3 1B"
+base_model: google/gemma-3-1b-it
+
+variables:
+  all_tasks: ["arc_easy", "hellaswag", "math_qa", "winogrande", "social_iqa", "piqa", "commonsense_qa", "openbookqa"]
+  learning_rates: [5e-6, 2.7e-5, 5.0e-5]
+
+stages:
+  eval_base:
+    type: eval
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - /eval: default
+        - /tasks: "{task}"
+        - _self_
+
+      eval:
+        checkpoints: false
+      output_dir: eval_base_{task}
+
+  train_eval_tasks:
+    num_gpus: 1
+    matrix:
+      task: all_tasks
+      lr: learning_rates
+    subjobs:
+      - type: wait_for_disk
+        config:
+          min_disk_gb: 700
+          output_dir: "wait_fullft_{task}_lr{lr}"
+      - type: train
+        config:
+          defaults:
+            - /train: fullft_default
+            - /train: wandb_default
+            - /tasks: "{task}"
+            - _self_
+          learning_rate: "{lr}"
+          output_dir: "fullft_{task}_lr{lr}"
+      - type: eval
+        config:
+          defaults:
+            - /eval: default
+            - /tasks: "{task}"
+            - _self_
+          model_path: "fullft_{task}_lr{lr}"
+          output_dir: "eval_fullft_{task}_lr{lr}"
+    cleanup_checkpoints: "fullft_{task}_lr{lr}"
+
+  select_best_task_lr:
+    type: select_best
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      metric: accuracy
+      eval_results_glob: "eval_fullft_{task}_lr*"
+      link_name: "fullft_{task}"
+      eval_link_name: "eval_trained_fullft_{task}"
+      output_dir: "select_best_fullft_{task}"
+
+  cleanup_first_lr_sweep:
+    type: cleanup
+    num_gpus: 0
+    config:
+      patterns:
+        - "fullft_*_lr*"
+      output_dir: cleanup_first_lr_sweep
+
+  eval_fullft_relevance:
+    type: eval
+    matrix:
+      task1: all_tasks
+      task2: all_tasks
+    config:
+      defaults:
+        - /eval: relevance
+        - /tasks: "{task2}"
+        - _self_
+
+      model_path: "fullft_{task1}"
+      output_dir: eval_{task1}_on_{task2}
+
+  select_topk:
+    type: topk
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      k: 2
+      metric: accuracy
+      weight_strategy: equal
+      eval_results_glob: eval_*_on_{task}
+      exclude_glob: eval_{task}_on_{task}
+      output_dir: merge_config_{task}
+
+  merge_models:
+    type: merge
+    num_gpus: 1
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - /merge: linear
+        - "@output": merge_config_{task}/topk_config
+        - _self_
+      output_dir: merged_fullft_{task}
+
+  eval_merged:
+    type: eval
+    matrix:
+      task: all_tasks
+    config:
+      defaults:
+        - /eval: default
+        - /tasks: "{task}"
+        - _self_
+
+      model_path: merged_fullft_{task}
+      output_dir: eval_merged_fullft_{task}
+
+  train_eval_on_merged:
+    num_gpus: 1
+    matrix:
+      task: all_tasks
+      lr: learning_rates
+    subjobs:
+      - type: wait_for_disk
+        config:
+          min_disk_gb: 700
+          output_dir: "wait_merged_{task}_lr{lr}"
+      - type: train
+        config:
+          defaults:
+            - /train: fullft_default
+            - /train: wandb_default
+            - /tasks: "{task}"
+            - _self_
+          base_model: merged_fullft_{task}
+          learning_rate: "{lr}"
+          output_dir: "trained_merged_{task}_lr{lr}"
+      - type: eval
+        config:
+          defaults:
+            - /eval: default
+            - /tasks: "{task}"
+            - _self_
+          base_model: "trained_merged_{task}_lr{lr}"
+          model_path: "trained_merged_{task}_lr{lr}"
+          output_dir: "eval_merged_{task}_lr{lr}"
+    cleanup_checkpoints: "trained_merged_{task}_lr{lr}"
+
+  cleanup_merged_models:
+    type: cleanup
+    num_gpus: 0
+    config:
+      patterns:
+        - "merged_fullft_*"
+      output_dir: cleanup_merged_models
+
+  select_best_trained_merged_lr:
+    type: select_best
+    num_gpus: 0
+    matrix:
+      task: all_tasks
+    config:
+      metric: accuracy
+      eval_results_glob: "eval_merged_{task}_lr*"
+      link_name: "trained_merged_{task}"
+      eval_link_name: "eval_trained_merged_{task}"
+      output_dir: "select_best_trained_merged_{task}"
+
+  cleanup_all_models:
+    type: cleanup
+    num_gpus: 0
+    config:
+      remove_symlinks:
+        - "fullft_*"
+        - "trained_merged_*"
+      patterns:
+        - "wait_*"
+        - "fullft_*_lr*"
+        - "trained_merged_*"
+      output_dir: cleanup_all_models
+
+  summary:
+    type: summary
+    num_gpus: 0
+    config:
+      output_dir: summary
+      results:
+        - name: base
+          pattern: "eval_base_*"
+          include_checkpoints: false
+        - name: lr_sweep_fullft
+          pattern: "eval_fullft_*_lr*"
+        - name: trained_fullft
+          pattern: "eval_trained_fullft_*"
+        - name: merged_fullft
+          pattern: "eval_merged_fullft_*"
+          include_checkpoints: false
+        - name: lr_sweep_merged
+          pattern: "eval_merged_*_lr*"
+        - name: trained_merged
+          pattern: "eval_trained_merged_*"
+
+  analysis:
+    type: analysis
+    num_gpus: 0
+    config:
+      output_dir: analysis
+      group: fullft
+      methods:
+        base: {name: base, display: "Base model"}
+        from_scratch: {name: trained_fullft, checkpoint: final, display: "Full FT (from scratch)"}
+        merged: {name: merged_fullft, display: "Merged (zero-shot)"}
+        mashup: {name: trained_merged, checkpoint: final, display: "Mashup Learning"}
+      sweeps:
+        from_scratch: lr_sweep_fullft
+        mashup: lr_sweep_merged
+      timing_stages:
+        train: train_eval_tasks
+        relevance: eval_fullft_relevance
+        merge: merge_models
+        train_merged: train_eval_on_merged
+      task_labels: null

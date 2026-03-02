@@ -1,0 +1,6 @@
+eval:
+  batch_size: 64
+  dtype: bfloat16
+  max_samples: 256
+  split: train
+  checkpoints: false

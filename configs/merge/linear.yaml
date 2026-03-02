@@ -1,0 +1,3 @@
+merge:
+  method: linear
+  dtype: bfloat16

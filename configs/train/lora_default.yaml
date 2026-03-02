@@ -1,0 +1,66 @@
+# LoRA adapter settings
+adapter: lora
+lora_model_dir:
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+# Training hyperparameters
+sequence_len: 2048
+sample_packing: false
+eval_sample_packing: true
+val_set_size: 0.00  # 1% for faster validation (was 0.1)
+
+# Distributed training settings
+main_process_port: 0  # Auto-select available port
+
+gradient_accumulation_steps: 1
+micro_batch_size: 32
+num_epochs: 1
+max_grad_norm: 1.0
+
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 3e-4
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: false
+
+loss_watchdog_threshold:
+loss_watchdog_patience:
+
+warmup_ratio: 0.1
+
+# IMPORTANT: These settings use per-epoch scheduling
+# Do NOT use eval_steps or save_steps in your pipeline configs as they conflict
+# Use max_steps to control training duration instead of num_epochs
+evals_per_epoch: 0
+saves_per_epoch: 10
+save_total_limit: 20
+
+weight_decay: 0.0
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+# Liger fused kernels — avoids materializing full logits tensor
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rope: true
+liger_fused_linear_cross_entropy: true
+liger_cross_entropy: false

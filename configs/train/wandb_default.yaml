@@ -1,0 +1,5 @@
+wandb_project: mashup
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:

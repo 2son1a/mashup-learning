@@ -1,0 +1,127 @@
+[project]
+name = "mashup"
+version = "0.1.0"
+description = "Model merging experiments with Axolotl and MergeKit"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "numpy<2.5",
+    "axolotl==0.9.1",
+    "mergekit==0.1.4",
+    "pyyaml>=6.0",
+    "wandb>=0.15.0",
+    "omegaconf",
+    "accelerate>=1.12.0",
+    "transformers>=5.0",
+    "cut-cross-entropy",
+]
+
+[project.scripts]
+mashup-pipeline = "scripts.pipeline:main"
+mashup-train = "scripts.train:main"
+mashup-eval = "scripts.eval:main"
+mashup-merge = "scripts.merge:main"
+mashup-lora-merge = "scripts.lora_merge:main"
+mashup-topk = "scripts.topk:main"
+mashup-select-best = "scripts.select_best:main"
+mashup-summary = "scripts.summary:main"
+mashup-cleanup = "scripts.cleanup:main"
+mashup-preprocess = "scripts.preprocess_datasets:main"
+mashup-analyze = "scripts.analyze:main"
+
+[project.optional-dependencies]
+analysis = [
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["mashup*", "scripts*"]
+
+[tool.setuptools.package-data]
+mashup = ["*.py"]
+
+[tool.uv]
+override-dependencies = [
+    "scikit-learn>=1.6",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "transformers>=5.0",
+    "accelerate>=1.12.0",
+    "huggingface-hub>=1.0",
+    "hf-xet>=1.2.0",
+    # liger-kernel <0.7 imports _CONFIG_FOR_DOC which was removed in transformers 5.x.
+    "liger-kernel>=0.7",
+    # xformers is a transitive dep from axolotl but incompatible with torch 2.10;
+    # not needed (flash-attn is used instead). Exclude via impossible marker.
+    "xformers ; python_version < '0'",
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]
+axolotl-contribs-mit = ["tqdm"]
+axolotl-contribs-lgpl = ["tqdm"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=8.0",
+    "ruff>=0.15.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Ruff configuration
+[tool.ruff]
+# Line length: Maximum characters per line (Black's default is 88)
+line-length = 88
+
+# Target Python version: Tells Ruff which Python features are available
+target-version = "py313"
+
+# Exclude: Directories/files Ruff should ignore
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Select: Which linting rules to enable
+# E/W = pycodestyle errors/warnings (PEP 8 style)
+# F = Pyflakes (detect unused imports, variables, etc.)
+# I = isort (import sorting)
+# N = pep8-naming (naming conventions)
+# UP = pyupgrade (upgrade syntax for newer Python)
+# B = flake8-bugbear (detect likely bugs)
+select = ["E", "F", "I", "N", "UP", "B"]
+
+# Ignore: Specific rules to skip
+# E501 = line too long (formatter handles this)
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# Import sorting settings
+known-first-party = ["mashup", "scripts"]
+
+[tool.ruff.format]
+# Quote style: Use double quotes for strings
+quote-style = "double"
+
+# Indent style: Use spaces (not tabs)
+indent-style = "space"
+
+# Line endings: Unix-style (LF not CRLF)
+line-ending = "lf"

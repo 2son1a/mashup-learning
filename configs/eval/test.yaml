@@ -1,0 +1,6 @@
+eval:
+  batch_size: 16
+  dtype: bfloat16
+  max_samples: 32
+  split: validation  # Evaluate on held-out data (override per-task if needed)
+  checkpoints: true  # Evaluate all training checkpoints

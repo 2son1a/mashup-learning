@@ -1,0 +1,7 @@
+datasets:
+  - path: data/processed/openbookqa
+    type: chat_template
+    field_messages: messages
+    message_field_role: role
+    message_field_content: content
+    split: train
