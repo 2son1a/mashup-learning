@@ -234,14 +234,3 @@ All scripts are also available as console commands after `uv sync`: `mashup-pipe
 ## Known Issues
 
 **Axolotl / trl / transformers 5.x incompatibility:** Axolotl 0.9.1 and trl were built for transformers 4.x. Transformers 5.x introduced several breaking changes (renamed classes, removed kwargs, changed return types). The `scripts/postinstall.py` script automatically patches the installed packages to fix all known incompatibilities. This is run as part of `bash setup.sh`, or you can run it manually with `uv run python scripts/postinstall.py`. The script is idempotent and safe to run multiple times.
-
-## Citation
-
-```bibtex
-@inproceedings{anonymous2026mashup,
-  title     = {Mashup Learning: Faster Finetuning by Remixing Past Checkpoints},
-  author    = {Anonymous},
-  booktitle = {Proceedings of the International Conference on Machine Learning (ICML)},
-  year      = {2026}
-}
-```
