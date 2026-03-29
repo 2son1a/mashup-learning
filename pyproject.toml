@@ -63,6 +63,9 @@ override-dependencies = [
     # xformers is a transitive dep from axolotl but incompatible with torch 2.10;
     # not needed (flash-attn is used instead). Exclude via impossible marker.
     "xformers ; python_version < '0'",
+    # zstandard 0.22.0 ships a cffi build that is ABI-incompatible with Python 3.13
+    # (_PyErr_WriteUnraisableMsg undefined symbol). 0.23.0+ has proper 3.13 wheels.
+    "zstandard>=0.23.0",
 ]
 
 [tool.uv.extra-build-dependencies]
