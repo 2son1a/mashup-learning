@@ -96,7 +96,7 @@ def analyze_run(
         output_dir = run_dir / "analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    prefix = cfg.experiment_name
+    prefix = cfg.experiment_name.replace("/", "_")
     df["seed"] = run_dir.name
 
     print(f"\n=== Analyzing run: {run_dir.name} ===")
@@ -139,7 +139,7 @@ def analyze_model(
     _populate_config(cfg, df)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    prefix = cfg.experiment_name
+    prefix = cfg.experiment_name.replace("/", "_")
     n_seeds = len(seed_frames)
 
     print(f"\n=== Model analysis: {cfg.experiment_name} ({n_seeds} seeds) ===")
